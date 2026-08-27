@@ -37,8 +37,8 @@ static inline double constrain_val(double val, double min, double max)
 
 static float calcFantast(int raw_adc_12bit)
 {
-    if (raw_adc_12bit <= 0) return -40.0f;
-    if (raw_adc_12bit >= 4095) return 300.0f;
+    if (raw_adc_12bit <= 10) return -40.0f;
+    if (raw_adc_12bit >= 4080) return 300.0f;
 
     double sensorValue10Bit = (double)raw_adc_12bit / 4.0;
     const double p0 = 0.6390482;
@@ -53,14 +53,17 @@ static float calcFantast(int raw_adc_12bit)
 
 static void send_temperature_update(uint16_t endpoint_id, float temp_celsius)
 {
+    // Matter Temperature Measurement erwartet int16_t in 0.01 °C (z. B. 21.50 °C -> 2150)
+    int16_t temperature = (int16_t)roundf(temp_celsius * 100.0f);
+
     low_code_feature_data_t data;
     memset(&data, 0, sizeof(low_code_feature_data_t));
 
     data.details.endpoint_id = endpoint_id;
     data.details.feature_id = LOW_CODE_FEATURE_ID_TEMPERATURE_SENSOR_VALUE;
-    data.value.type = LOW_CODE_VALUE_TYPE_FLOAT;
-    data.value.value = (uint8_t *)&temp_celsius;
-    data.value.value_len = sizeof(float);
+    data.value.type = LOW_CODE_VALUE_TYPE_INTEGER;
+    data.value.value = (uint8_t *)&temperature;
+    data.value.value_len = sizeof(int16_t);
 
     low_code_feature_update_to_system(&data);
 }
@@ -87,6 +90,11 @@ static int read_adc_channel_direct(uint8_t channel)
     return raw;
 }
 
+static void app_driver_timer_cb(system_timer_handle_t timer_handle, void *user_data)
+{
+    app_driver_feature_update();
+}
+
 int app_driver_init(void)
 {
     // SAR-ADC Bus & Clock auf ESP32-C6 aktivieren
@@ -95,6 +103,15 @@ int app_driver_init(void)
     PCR.saradc_conf.saradc_rst_en = 0;
 
     ESP_LOGI(TAG, "ADC-Treiber initialisiert.");
+
+    // Periodischen Timer alle 5 Sekunden (5000 ms) starten
+    system_timer_handle_t timer = system_timer_create(app_driver_timer_cb, NULL, 5000, true);
+    if (timer) {
+        system_timer_start(timer);
+    } else {
+        ESP_LOGE(TAG, "Fehler beim Erstellen des Sensor-Timers!");
+    }
+
     return 0;
 }
 
@@ -111,10 +128,10 @@ int app_driver_feature_update(void)
     int t2_int = (int)temp2;
     int t2_dec = (int)(fabsf(temp2 - (float)t2_int) * 10.0f);
 
-    ESP_LOGI(TAG, "Messung -> F1: %d.%d C (RAW: %d) | F2: %d.%d C (RAW: %d)",
+    ESP_LOGI(TAG, "Messung -> F1: %d.%d °C (RAW: %d) | F2: %d.%d °C (RAW: %d)",
              t1_int, t1_dec, raw1, t2_int, t2_dec, raw2);
 
-    // Beide Endpoints pushen
+    // Beide Endpoints als int16_t (in 0.01 °C) pushen
     send_temperature_update(1, temp1);
     send_temperature_update(2, temp2);
 
