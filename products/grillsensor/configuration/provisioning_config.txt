@@ -1,0 +1,9 @@
+# NO MODIFICATIONS SHOULD BE MADE TO THIS FILE!
+# These values are used to provision the device
+# KPwB is your simple setup ID.
+# A3U166XIFYJGC1 is the device type for your product.
+# The ZTS Key is used for authentication during Zero Touch Setup
+
+simpleSetupId = "KPwB"
+deviceType = "A3U166XIFYJGC1"
+ztsKey = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEIkMQvHQm4ICr4Msak1mZ/9iuT75co45jTZuKgWo+1IGGkRUqa9WT2Lb+M0igOyZLwM8I/ltwJciznguds5UaSg=="
