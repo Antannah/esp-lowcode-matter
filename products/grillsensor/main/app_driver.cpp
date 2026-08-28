@@ -11,13 +11,18 @@
 
 static const char *TAG = "app_driver";
 
-// ADC Kanäle (ESP32-C6)
-#define PROBE1_CHANNEL  0   // GPIO 0 (Fühler 1)
-#define PROBE2_CHANNEL  1   // GPIO 1 (Fühler 2)
-#define BAT_ADC_CHANNEL 3   // GPIO 3 (Batteriespannung über 1M / 1M Teiler)
+// Seeed Studio XIAO ESP32-C6 Pinout & ADC-Kanäle:
+#define PROBE1_CHANNEL      0   // D0 / GPIO 0 (Fühler 1: Kerntemperatur)
+#define PROBE2_CHANNEL      1   // D1 / GPIO 1 (Fühler 2: Garraum)
+#define BAT_ADC_CHANNEL     2   // D2 / GPIO 2 (Batteriespannung über 1M / 1M Teiler)
 
-// GPIO 2 versorgt die Pull-Up-Widerstände geschaltet nur während der Messung
-#define SENSOR_PWR_GPIO 2
+// D3 / GPIO 21 versorgt die Pull-Up-Widerstände geschaltet nur während der Messung (Power-Gating)
+#define SENSOR_PWR_GPIO     21
+
+// HF-Antennenumschaltung (Seeed Studio XIAO ESP32-C6 Onboard RF Switch)
+#define ANT_CTRL_EN_GPIO    3   // LOW = aktiviert RF Switch Control
+#define ANT_SEL_GPIO        14  // LOW = Interne Keramikantenne, HIGH = Externe U.FL Antenne
+#define USE_EXTERNAL_ANT    1   // 1 = Externe U.FL / Stabantenne, 0 = Interne Keramikantenne
 
 // Einschwingzeit nach Aktivieren von SENSOR_PWR_GPIO (RC-Filter: 47k * 100nF = ~4.7 ms -> 5*tau ~ 25 ms)
 #define SENSOR_SETTLING_TIME_MS 25
@@ -193,19 +198,25 @@ static void app_driver_timer_cb(system_timer_handle_t timer_handle, void *user_d
 
 int app_driver_init(void)
 {
-    // SAR-ADC Bus & Clock auf ESP32-C6 aktivieren
+    // 1. SAR-ADC Bus & Clock auf ESP32-C6 aktivieren
     PCR.saradc_clkm_conf.saradc_clkm_en = 1;
     PCR.saradc_conf.saradc_reg_clk_en = 1;
     PCR.saradc_conf.saradc_rst_en = 0;
 
-    // GPIO für Sensor-Versorgung als Ausgang konfigurieren und initial stromlos schalten
+    // 2. Seeed Studio XIAO ESP32-C6 Antennenschalter konfigurieren
+    system_set_pin_mode(ANT_CTRL_EN_GPIO, OUTPUT);
+    system_digital_write(ANT_CTRL_EN_GPIO, LOW);  // RF Switch aktivieren
+    system_set_pin_mode(ANT_SEL_GPIO, OUTPUT);
+    system_digital_write(ANT_SEL_GPIO, USE_EXTERNAL_ANT ? HIGH : LOW); // Externe / Interne Antenne
+
+    // 3. Sensor-Power-Gating (D3 / GPIO 21) initialisieren
     system_set_pin_mode(SENSOR_PWR_GPIO, OUTPUT);
     system_digital_write(SENSOR_PWR_GPIO, LOW);
 
-    ESP_LOGI(TAG, "ADC-, Power-Gating- (GPIO %d) & Batterie-Treiber (GPIO %d) initialisiert.",
-             SENSOR_PWR_GPIO, BAT_ADC_CHANNEL);
+    ESP_LOGI(TAG, "XIAO ESP32-C6 Treiber init: PWR-Pin=D3(GPIO%d), Fühler1=D0(CH0), Fühler2=D1(CH1), Bat=D2(CH2), Antenne=%s",
+             SENSOR_PWR_GPIO, USE_EXTERNAL_ANT ? "Extern (U.FL)" : "Intern (Keramik)");
 
-    // Periodischen Timer alle 5 Sekunden (5000 ms) starten
+    // 4. Periodischen Timer alle 5 Sekunden (5000 ms) starten
     system_timer_handle_t timer = system_timer_create(app_driver_timer_cb, NULL, 5000, true);
     if (timer) {
         system_timer_start(timer);
@@ -218,13 +229,13 @@ int app_driver_init(void)
 
 int app_driver_feature_update(void)
 {
-    // 1. Sensor-Spannungsversorgung aktivieren (Power-Gating)
+    // 1. Sensor-Spannungsversorgung aktivieren (Power-Gating über D3 / GPIO 21)
     system_digital_write(SENSOR_PWR_GPIO, HIGH);
 
     // 2. RC-Tiefpassfilter einschwingen lassen (tau = ~4.7ms -> 25ms Warten für 99% Genauigkeit)
     system_delay_ms(SENSOR_SETTLING_TIME_MS);
 
-    // 3. ADC-Kanäle abtasten (Fühler 1, Fühler 2, Batterie)
+    // 3. ADC-Kanäle abtasten: D0 (CH0), D1 (CH1), D2 (CH2)
     int raw1 = read_adc_channel_direct(PROBE1_CHANNEL);
     int raw2 = read_adc_channel_direct(PROBE2_CHANNEL);
     int raw_bat = read_adc_channel_direct(BAT_ADC_CHANNEL);
