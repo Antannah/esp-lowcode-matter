@@ -1,0 +1,22 @@
+Label;Value;Part Type;mn;mpn;part number;
+C1;100nF;Ceramic Capacitor;;;;
+C2;100nF;Ceramic Capacitor;;;;
+C2 -Low-ESR;470µF;Electrolytic Capacitor;;;;
+C3;100nF;Ceramic Capacitor;;;;
+R1;47kΩ;47kΩ Resistor;;;;
+R2;47kΩ;47kΩ Resistor;;;;
+R3;1MΩ;1MΩ Resistor;;;;
+R4;1MΩ;1MΩ Resistor;;;;
+TRS2;;Audio Jack (TRS) 3.5mm;;;;
+TRS3;;Audio Jack (TRS) 3.5mm;;;;
+U1;;XIAO ESP32C6;;; XIAO ESP32C6;
+V1;;DC Power;;;;
+
+Amount;Value;Part Type;mn;mpn;part number;
+3;100nF;Ceramic Capacitor;;;;
+2;1MΩ;1MΩ Resistor;;;;
+1;470µF;Electrolytic Capacitor;;;;
+2;47kΩ;47kΩ Resistor;;;;
+2;;Audio Jack (TRS) 3.5mm;;;;
+1;;DC Power;;;;
+1;;XIAO ESP32C6;;; XIAO ESP32C6;
