@@ -1,6 +1,6 @@
 # Schaltplan & Hardware-Dokumentation: Dual-Grillsensor (Seeed Studio XIAO ESP32-C6)
 
-Dokumentation des analogen Frontends für den Dual-Grillsensor (IKEA Fantast / 100k NTC) am **Seeed Studio XIAO ESP32-C6** mit integriertem LiPo-Lader (800 mAh), geschalteter Sensorversorgung (Power-Gating via GPIO), Tiefpass- und Bypass-Kondensatoren, Batteriespannungsüberwachung sowie Antennen-Umschaltung.
+Dokumentation des analogen Frontends für den Dual-Grillsensor (IKEA Fantast / 100k NTC) am **Seeed Studio XIAO ESP32-C6** mit integriertem LiPo-Lader (800 mAh), Low-ESR Puffer-Elko gegen Thread-Sendespitzen (Brownout-Schutz), geschalteter Sensorversorgung (Power-Gating via GPIO), Tiefpass- und Bypass-Kondensatoren, Batteriespannungsüberwachung sowie Antennen-Umschaltung.
 
 ---
 
@@ -30,19 +30,29 @@ Dokumentation des analogen Frontends für den Dual-Grillsensor (IKEA Fantast / 1
                      │                               │
                     GND                             GND
 
-            ──────────────────────────────────────────────────────
-            Batteriespannungsmessung (LiPo BAT+ -> D2 / GPIO 2):
+    ──────────────────────────────────────────────────────────────────
+    Stromversorgung & Batteriemessung (LiPo BAT+ -> D2 / GPIO 2):
 
-                     BAT+ (3.0V - 4.2V Akku / Unterseite Pad)
-                       │
-                      [R3] 1MΩ
-                       │
-                       ├─────────────── D2 / GPIO 2 (ADC1_CH2 / BAT_SENSE)
-                       │           │
-                      [R4]        [C3] 100nF (Filter)
-                      1MΩ          │
-                       │           │
-                      GND──────────┘
+             LiPo-Akku (800 mAh / 3.0V - 4.2V)
+               │
+             BAT+ (Lötpad Unterseite)
+               │
+               ├───┬───────────────────────────┐
+               │   │                           │
+              [R3] │                         + │
+              1MΩ  │                        [C_bulk] 220µF - 470µF (Low-ESR Elko)
+               │   │                         - │  (Puffert 2.4GHz Thread TX-Peaks)
+               │   │                           │
+               │   ├─────────── D2 / GPIO 2    │
+               │   │            (ADC1_CH2 /    │
+               │   │             BAT_SENSE)    │
+               │   │                           │
+              [R4] │                           │
+              1MΩ [C3] 100nF                   │
+               │   │ (Filter)                  │
+               │   │                           │
+             BAT- / GND────────────────────────┴───────────────────────
+             (Gemeinsame Masse)
 ```
 
 ---
@@ -63,7 +73,13 @@ Dokumentation des analogen Frontends für den Dual-Grillsensor (IKEA Fantast / 1
 
 ---
 
-## 3. Detail-Verdrahtung
+## 3. Detail-Verdrahtung & Schutzbeschaltung
+
+### Stromversorgung & Brownout-Schutz (Low-ESR Elko):
+* **$C_{\text{bulk}}$ ($220\text{ }\mu\text{F}\dots 470\text{ }\mu\text{F}$ Low-ESR Elko / Polymer / Tantal, $\ge 6{,}3\text{ V}$):**
+  * Direkt parallel an **`BAT+`** und **`BAT-` / `GND`** angeschlossen.
+  * **Zweck:** Fängt die kurzzeitigen Stromspitzen von $150\text{–}250\text{ mA}$ während der Thread-Funkübertragung ab.
+  * **Vorteil:** Verhindert Spannungseinbrüche und Brownout-Resets, wenn der Akku unter $3{,}5\text{ V}$ entladen ist $\rightarrow$ Ermöglicht den stabilen Betrieb bis zur Entladeschlussspannung von $\approx 3{,}2\text{ V}$.
 
 ### Sensor-Stromversorgung (Power-Gating):
 * **`D3` (`GPIO 21` / `SENSOR_PWR`):** Versorgt die Pull-Up-Widerstände ($R_1, R_2$) mit $3.3\text{ V}$.
@@ -112,10 +128,11 @@ Das XIAO C6 Board verfügt über einen HF-Umschalter:
 | :--- | :--- | :--- | :--- |
 | 1 | **MCU** | Seeed Studio XIAO ESP32-C6 | Matter-over-Thread Modul mit integriertem LiPo-Lader |
 | 2 | **Akku** | 1S LiPo (3.7V / 800 mAh) | An BAT+ / BAT- Lötpads der Unterseite |
-| 3 | **R1, R2** | $47\text{ k}\Omega$ (1% Metallschicht) | Vorwiderstände für NTC-Spannungsteiler (an D3) |
-| 4 | **R3, R4** | $1\text{ M}\Omega$ (1% Metallschicht) | Spannungsteiler für Akkumessung (an D2) |
-| 5 | **C1, C2, C3** | $100\text{ nF}$ (0.1 µF, X7R Keramik) | Tiefpassfilter ($f_c \approx 33\text{ Hz}$) zur Rauschunterdrückung |
-| 6 | **J1, J2** | 2.5 mm / 3.5 mm Klinkenbuchse (Mono/Stereo) | Buchsen für IKEA Fantast Fühler |
+| 3 | **$C_{\text{bulk}}$** | $220\text{ }\mu\text{F}\dots 470\text{ }\mu\text{F}$ (Low-ESR Elko / Polymer, $\ge 6{,}3\text{ V}$) | Pufferkondensator an BAT+ / BAT- gegen Thread TX-Peaks |
+| 4 | **R1, R2** | $47\text{ k}\Omega$ (1% Metallschicht) | Vorwiderstände für NTC-Spannungsteiler (an D3) |
+| 5 | **R3, R4** | $1\text{ M}\Omega$ (1% Metallschicht) | Spannungsteiler für Akkumessung (an D2) |
+| 6 | **C1, C2, C3** | $100\text{ nF}$ (0.1 µF, X7R Keramik) | Tiefpassfilter ($f_c \approx 33\text{ Hz}$) zur Rauschunterdrückung |
+| 7 | **J1, J2** | 2.5 mm / 3.5 mm Klinkenbuchse (Mono/Stereo) | Buchsen für IKEA Fantast Fühler |
 
 ---
 
