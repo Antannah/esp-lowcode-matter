@@ -35,6 +35,10 @@ static const char *TAG = "app_driver";
 #define BAT_DELTA_MV_THRESHOLD      50      // Sendet bei Spannungsänderung >= 50 mV (0.05 V)
 #define BAT_HEARTBEAT_INTERVAL_MS   600000  // Sendet spätestens alle 10 Minuten einen Heartbeat
 
+// 12-Bit ADC Grenzwerte für IKEA Fantast NTC (entspricht 1.0 bzw. 930.0 in 10-Bit)
+#define ADC_12BIT_MIN_RAW   4
+#define ADC_12BIT_MAX_RAW   3720
+
 #define ONESHOT_MODE_BIT      (1U << 0)
 #define ONESHOT_CH_SHIFT      1
 #define ONESHOT_ATTEN_SHIFT   23
@@ -64,25 +68,17 @@ static inline void lp_delay_cycles(uint32_t cycles)
     }
 }
 
-static inline double constrain_val(double val, double min, double max)
-{
-    if (val < min) return min;
-    if (val > max) return max;
-    return val;
-}
-
 static float calcFantast(int raw_adc_12bit)
 {
-    if (raw_adc_12bit <= 10) return -40.0f;
-    if (raw_adc_12bit >= 4080) return 300.0f;
+    static const double p0 = 0.6390482;
+    static const double p1 = 3.78729949;
+    static const double p2 = -29.58798407;
+    static const double p3 = 60.75987107;
 
-    double sensorValue10Bit = (double)raw_adc_12bit / 4.0;
-    const double p0 = 0.6390482;
-    const double p1 = 3.78729949;
-    const double p2 = -29.58798407;
-    const double p3 = 60.75987107;
+    if (raw_adc_12bit <= ADC_12BIT_MIN_RAW) return -40.0f;
+    if (raw_adc_12bit >= ADC_12BIT_MAX_RAW) return 300.0f;
 
-    double U = constrain_val(sensorValue10Bit, 1.0, 930.0) / 1024.0;
+    double U = (double)raw_adc_12bit / 4096.0;
     double lnU = log(U / (1.0 - U));
     return (float)(p3 + (p2 * lnU) + (p1 * pow(lnU, 2)) + (p0 * pow(lnU, 3)));
 }
