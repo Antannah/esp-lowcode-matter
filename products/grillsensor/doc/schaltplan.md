@@ -1,6 +1,6 @@
 # Schaltplan & Hardware-Dokumentation: Dual-Grillsensor (Seeed Studio XIAO ESP32-C6)
 
-Dokumentation des analogen Frontends für den Dual-Grillsensor (IKEA Fantast / 100k NTC) am **Seeed Studio XIAO ESP32-C6** mit integriertem LiPo-Lader (800 mAh), Low-ESR Puffer-Elko gegen Thread-Sendespitzen (Brownout-Schutz), geschalteter Sensorversorgung (Power-Gating via GPIO), Tiefpass- und Bypass-Kondensatoren, Batteriespannungsüberwachung sowie Antennen-Umschaltung.
+Dokumentation des analogen Frontends für den Dual-Grillsensor (IKEA Fantast / 100k NTC) am **Seeed Studio XIAO ESP32-C6** mit integriertem LiPo-Lader (800 mAh), Low-ESR Puffer-Elko gegen Thread-Sendespitzen (Brownout-Schutz), geschalteter Sensorversorgung (Power-Gating via GPIO), Tiefpass- und Bypass-Kondensatoren, Batteriespannungsüberwachung, Hardware-Ein/Aus-Schalter (Schubladen-Modus mit Ladefunktion) sowie Antennen-Umschaltung.
 
 ---
 
@@ -31,7 +31,7 @@ Dokumentation des analogen Frontends für den Dual-Grillsensor (IKEA Fantast / 1
                     GND                             GND
 
     ──────────────────────────────────────────────────────────────────
-    Stromversorgung & Batteriemessung (LiPo BAT+ -> D2 / GPIO 2):
+    Stromversorgung, Batteriemessung & Ein/Aus-Schalter:
 
              LiPo-Akku (800 mAh / 3.0V - 4.2V)
                │
@@ -53,6 +53,20 @@ Dokumentation des analogen Frontends für den Dual-Grillsensor (IKEA Fantast / 1
                │   │                           │
              BAT- / GND────────────────────────┴───────────────────────
              (Gemeinsame Masse)
+
+    ──────────────────────────────────────────────────────────────────
+    Ein/Aus-Schalter (Schubladen-Ausschaltung & USB-Laden im Auszustand):
+
+             EN / RST Pad (Signal-Kontakt des Reset-Tasters)
+               │
+               o
+                \   [S1] Schiebeschalter (SPST / SPDT)
+               o
+               │
+              GND (Gemeinsame Masse)
+
+             * Schalter GESCHLOSSEN (EN -> GND): ESP32-C6 im Shutdown (~1 µA), Akku lädt bei USB-C
+             * Schalter OFFEN (EN frei): Normalbetrieb / Messung & Matter-Datenübertragung
 ```
 
 ---
@@ -65,15 +79,22 @@ Dokumentation des analogen Frontends für den Dual-Grillsensor (IKEA Fantast / 1
 | **`D1`** | `GPIO 1` | **Grillfühler 2 (Garraum)** | `ADC1_CH1` (Analog In) | NTC-Spannungsteiler mit R2 ($47\text{ k}\Omega$) |
 | **`D2`** | `GPIO 2` | **Batteriespannung ($V_{\text{BAT}}$)** | `ADC1_CH2` (Analog In) | Teiler 1:2 ($1\text{ M}\Omega / 1\text{ M}\Omega$) an BAT+ |
 | **`D3`** | `GPIO 21` | **Sensor Power-Gating ($V_{\text{SENSE}}$)** | Digital Output | Versorgt R1/R2 nur während der Messung (High) |
+| **`EN` / `RST`** | *(Pad/Taster)* | **Ein/Aus-Schalter (Power/Storage)** | Hardware Control | Schalter gegen GND: Shutdown / Schubladenmodus |
 | *(intern)* | `GPIO 3` | **RF-Switch Enable** | Digital Output | Fest auf `LOW` (aktiviert HF-Schalter) |
 | *(intern)* | `GPIO 14` | **Antennenauswahl** | Digital Output | `LOW` = Keramik / `HIGH` = Externe Antenne (U.FL) |
 | **`BAT+`** | *(Pad unten)* | LiPo Pluspol (3.7V / 800 mAh) | Akku-Eingang | Integrierter USB-C Ladechip (SGM40567) |
 | **`BAT-`** | *(Pad unten)* | LiPo Minuspol | GND | Gemeinsame Masse |
-| **`GND`** | Pin 13 | System-Masse | GND | Masse für Klinkenbuchsen & Filterkondensatoren |
+| **`GND`** | Pin 13 | System-Masse | GND | Masse für Klinkenbuchsen, Filter & Schalter |
 
 ---
 
 ## 3. Detail-Verdrahtung & Schutzbeschaltung
+
+### Ein/Aus-Schalter (Schubladen-Aufbewahrung & Laden):
+* **Schiebeschalter (S1):** Zwischen dem **`EN`/`RST`-Kontakt** (Signal-Seite des Onboard-Reset-Tasters) und **`GND`**.
+  * **Schalter AUS (Position Schublade / Kontakt geschlossen):** Zieht `EN` dauerhaft auf `GND`. Der ESP32-C6 schaltet seine internen Spannungsregler komplett ab (**Hardware-Shutdown, Ruhestrom $\approx 1\text{–}2\,\mu\text{A}$**).
+  * **USB-Ladefunktion im Auszustand:** Da der Akku fest an `BAT+`/`BAT-` angeschlossen bleibt, funktioniert das Aufladen über den USB-C Port auch im ausgeschalteten Zustand uneingeschränkt weiter.
+  * **Schalter EIN (Position Betrieb / Kontakt offen):** Der interne Pull-Up-Widerstand bringt `EN` auf $3{,}3\text{ V}$, der Chip bootet sofort und verbindet sich mit dem Thread-Netzwerk.
 
 ### Stromversorgung & Brownout-Schutz (Low-ESR Elko):
 * **$C_{\text{bulk}}$ ($220\text{ }\mu\text{F}\dots 470\text{ }\mu\text{F}$ Low-ESR Elko / Polymer / Tantal, $\ge 6{,}3\text{ V}$):**
@@ -128,11 +149,12 @@ Das XIAO C6 Board verfügt über einen HF-Umschalter:
 | :--- | :--- | :--- | :--- |
 | 1 | **MCU** | Seeed Studio XIAO ESP32-C6 | Matter-over-Thread Modul mit integriertem LiPo-Lader |
 | 2 | **Akku** | 1S LiPo (3.7V / 800 mAh) | An BAT+ / BAT- Lötpads der Unterseite |
-| 3 | **$C_{\text{bulk}}$** | $220\text{ }\mu\text{F}\dots 470\text{ }\mu\text{F}$ (Low-ESR Elko / Polymer, $\ge 6{,}3\text{ V}$) | Pufferkondensator an BAT+ / BAT- gegen Thread TX-Peaks |
-| 4 | **R1, R2** | $47\text{ k}\Omega$ (1% Metallschicht) | Vorwiderstände für NTC-Spannungsteiler (an D3) |
-| 5 | **R3, R4** | $1\text{ M}\Omega$ (1% Metallschicht) | Spannungsteiler für Akkumessung (an D2) |
-| 6 | **C1, C2, C3** | $100\text{ nF}$ (0.1 µF, X7R Keramik) | Tiefpassfilter ($f_c \approx 33\text{ Hz}$) zur Rauschunterdrückung |
-| 7 | **J1, J2** | 2.5 mm / 3.5 mm Klinkenbuchse (Mono/Stereo) | Buchsen für IKEA Fantast Fühler |
+| 3 | **S1** | Mini-Schiebeschalter (SPST / SPDT) | Ein/Aus-Schalter an EN/RST gegen GND (Shutdown / Schubladenmodus) |
+| 4 | **$C_{\text{bulk}}$** | $220\text{ }\mu\text{F}\dots 470\text{ }\mu\text{F}$ (Low-ESR Elko / Polymer, $\ge 6{,}3\text{ V}$) | Pufferkondensator an BAT+ / BAT- gegen Thread TX-Peaks |
+| 5 | **R1, R2** | $47\text{ k}\Omega$ (1% Metallschicht) | Vorwiderstände für NTC-Spannungsteiler (an D3) |
+| 6 | **R3, R4** | $1\text{ M}\Omega$ (1% Metallschicht) | Spannungsteiler für Akkumessung (an D2) |
+| 7 | **C1, C2, C3** | $100\text{ nF}$ (0.1 µF, X7R Keramik) | Tiefpassfilter ($f_c \approx 33\text{ Hz}$) zur Rauschunterdrückung |
+| 8 | **J1, J2** | 2.5 mm / 3.5 mm Klinkenbuchse (Mono/Stereo) | Buchsen für IKEA Fantast Fühler |
 
 ---
 
