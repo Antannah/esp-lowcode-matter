@@ -8,6 +8,14 @@
 #include "soc/pcr_struct.h"
 #include "app_priv.h"
 
+extern "C" void esp_rom_delay_us(uint32_t us)
+{
+    // Auf LP-Core / ULP (16-20 MHz) entsprechen ~16 NOPs ca. 1 us
+    for (uint32_t i = 0; i < us * 16; ++i) {
+        __asm__ __volatile__("nop");
+    }
+}
+
 static const char *TAG = "app_driver";
 
 // Seeed Studio XIAO ESP32-C6 Pinout & ADC-Kanäle:
