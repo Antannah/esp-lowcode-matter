@@ -169,29 +169,28 @@ static void process_and_report_battery(uint32_t voltage_mv, uint32_t now_ms)
 
 static int read_adc_channel_direct(uint8_t channel)
 {
-    // 1. Kanal wählen & Attenuation setzen
+    // 1. Kanal & Attenuation setzen
     adc_oneshot_ll_set_channel(ADC_UNIT_1, (adc_channel_t)channel);
     adc_oneshot_ll_set_atten(ADC_UNIT_1, (adc_channel_t)channel, ADC_ATTEN_DB_12);
+    esp_rom_delay_us(50);
 
-    // 2. Oneshot-Modus aktivieren & einschwingen lassen
-    adc_oneshot_ll_enable(ADC_UNIT_1);
-    lp_delay_cycles(500);
-
-    // 3. Vorheriges Done-Event clearen
+    // 2. Event clearen
     adc_oneshot_ll_clear_event(ADC_LL_EVENT_ADC1_ONESHOT_DONE);
+    esp_rom_delay_us(5);
 
-    // 4. Start-Puls senden
-    adc_oneshot_ll_start(true);
-    lp_delay_cycles(100);
+    // 3. Flanke nach adc_hal_common.c: erst start=false, dann start=true
     adc_oneshot_ll_start(false);
+    esp_rom_delay_us(5);
+    adc_oneshot_ll_start(true);
 
-    // 5. Warten bis Wandlung fertig ist
+    // 4. Warten bis Wandlung fertig ist
     int timeout = 5000;
     while (!adc_oneshot_ll_get_event(ADC_LL_EVENT_ADC1_ONESHOT_DONE) && --timeout > 0) {
-        lp_delay_cycles(20);
+        esp_rom_delay_us(2);
     }
+    adc_oneshot_ll_start(false);
 
-    // 6. Rohwert auslesen
+    // 5. Rohwert auslesen
     int raw = (int)adc_oneshot_ll_get_raw_result(ADC_UNIT_1);
 
     uint32_t int_raw_val = APB_SARADC.saradc_int_raw.val;
