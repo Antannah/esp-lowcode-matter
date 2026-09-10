@@ -4,8 +4,7 @@
 #include <system.h>
 #include <low_code.h>
 #include <esp_log.h>
-#include "hal/adc_ll.h"
-#include "soc/pcr_struct.h"
+#include "hal/adc_oneshot_hal.h"
 #include "app_priv.h"
 
 extern "C" void esp_rom_delay_us(uint32_t us)
@@ -46,7 +45,7 @@ static const char *TAG = "app_driver";
 #define ADC_12BIT_MIN_RAW   4
 #define ADC_12BIT_MAX_RAW   3720
 
-// ULP LP Core ADC
+static adc_oneshot_hal_ctx_t s_adc_hal;
 
 struct sensor_endpoint_state_t {
     float last_reported_temp;
@@ -169,35 +168,11 @@ static void process_and_report_battery(uint32_t voltage_mv, uint32_t now_ms)
 
 static int read_adc_channel_direct(uint8_t channel)
 {
-    // 1. Kanal & Attenuation setzen
-    adc_oneshot_ll_set_channel(ADC_UNIT_1, (adc_channel_t)channel);
-    adc_oneshot_ll_set_atten(ADC_UNIT_1, (adc_channel_t)channel, ADC_ATTEN_DB_12);
-    esp_rom_delay_us(50);
+    adc_oneshot_hal_setup(&s_adc_hal, (adc_channel_t)channel);
+    int raw = 0;
+    bool valid = adc_oneshot_hal_convert(&s_adc_hal, &raw);
 
-    // 2. Event clearen
-    adc_oneshot_ll_clear_event(ADC_LL_EVENT_ADC1_ONESHOT_DONE);
-
-    // 3. Hardware-Trigger: Impuls muss mindestens 3 ADC-Takte anliegen (~10 µs)
-    adc_oneshot_ll_start(true);
-    esp_rom_delay_us(20);
-    adc_oneshot_ll_start(false);
-    esp_rom_delay_us(20);
-
-    // 4. Warten bis Wandlung fertig ist
-    int timeout = 10000;
-    while (!adc_oneshot_ll_get_event(ADC_LL_EVENT_ADC1_ONESHOT_DONE) && --timeout > 0) {
-        esp_rom_delay_us(5);
-    }
-
-    // 5. Rohwert auslesen
-    int raw = (int)adc_oneshot_ll_get_raw_result(ADC_UNIT_1);
-
-    uint32_t int_raw_val = APB_SARADC.saradc_int_raw.val;
-    uint32_t data_reg = APB_SARADC.saradc_sar1data_status.val;
-
-    ESP_LOGI(TAG, "ADC CH%u: raw=%d, timeout_left=%d, int_raw=0x%08lx, data_reg=0x%08lx",
-             channel, raw, timeout, (unsigned long)int_raw_val, (unsigned long)data_reg);
-
+    ESP_LOGI(TAG, "ADC CH%u: raw=%d (valid=%d)", channel, raw, (int)valid);
     return raw;
 }
 
@@ -208,15 +183,23 @@ static void app_driver_timer_cb(system_timer_handle_t timer_handle, void *user_d
 
 int app_driver_init(void)
 {
-    // 1. SAR-ADC Clock & Power über ESP32-C6 PCR initialisieren
-    PCR.saradc_clkm_conf.saradc_clkm_en = 1;
-    PCR.saradc_conf.saradc_reg_clk_en = 1;
-    PCR.saradc_conf.saradc_rst_en = 0;
-    adc_ll_digi_controller_clk_div(ADC_LL_CLKM_DIV_NUM_DEFAULT, ADC_LL_CLKM_DIV_B_DEFAULT, ADC_LL_CLKM_DIV_A_DEFAULT);
-    adc_ll_digi_set_clk_div(ADC_LL_DIGI_SAR_CLK_DIV_DEFAULT);
-    adc_ll_digi_clk_sel(ADC_DIGI_CLK_SRC_XTAL);
-    adc_ll_set_power_manage(ADC_UNIT_1, ADC_LL_POWER_SW_ON);
-    adc_oneshot_ll_enable(ADC_UNIT_1);
+    // 1. ESP-IDF ADC Oneshot HAL initialisieren
+    adc_oneshot_hal_cfg_t hal_cfg = {
+        .unit = ADC_UNIT_1,
+        .work_mode = ADC_HAL_SINGLE_UNIT_BOTH,
+        .clk_src = ADC_RTC_CLK_SRC_DEFAULT,
+        .clk_src_freq_hz = 0,
+        .disable_dac_output = true,
+    };
+    adc_oneshot_hal_init(&s_adc_hal, &hal_cfg);
+
+    adc_oneshot_hal_chan_cfg_t chan_cfg = {
+        .atten = ADC_ATTEN_DB_12,
+        .bitwidth = ADC_BITWIDTH_12,
+    };
+    adc_oneshot_hal_channel_config(&s_adc_hal, &chan_cfg, (adc_channel_t)PROBE1_CHANNEL);
+    adc_oneshot_hal_channel_config(&s_adc_hal, &chan_cfg, (adc_channel_t)PROBE2_CHANNEL);
+    adc_oneshot_hal_channel_config(&s_adc_hal, &chan_cfg, (adc_channel_t)BAT_ADC_CHANNEL);
 
     // 2. Seeed Studio XIAO ESP32-C6 Antennenschalter konfigurieren
     system_set_pin_mode(ANT_CTRL_EN_GPIO, OUTPUT);
