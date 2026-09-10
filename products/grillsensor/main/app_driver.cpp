@@ -228,9 +228,9 @@ int app_driver_init(void)
     system_set_pin_mode(ANT_SEL_GPIO, OUTPUT);
     system_digital_write(ANT_SEL_GPIO, USE_EXTERNAL_ANT ? HIGH : LOW); // Externe / Interne Antenne
 
-    // 3. Sensor-Power-Gating (D3 / GPIO 21) initialisieren
+    // 3. Sensor-Power-Gating testweise dauerhaft auf HIGH (dauerhaft 3.3V an D3)
     system_set_pin_mode(SENSOR_PWR_GPIO, OUTPUT);
-    system_digital_write(SENSOR_PWR_GPIO, LOW);
+    system_digital_write(SENSOR_PWR_GPIO, HIGH);
 
     ESP_LOGI(TAG, "XIAO ESP32-C6 Treiber init: PWR-Pin=D3(GPIO%d), Fühler1=D0(CH0), Fühler2=D1(CH1), Bat=D2(CH2), Antenne=%s",
              SENSOR_PWR_GPIO, USE_EXTERNAL_ANT ? "Extern (U.FL)" : "Intern (Keramik)");
@@ -248,19 +248,11 @@ int app_driver_init(void)
 
 int app_driver_feature_update(void)
 {
-    // 1. Sensor-Spannungsversorgung aktivieren (Power-Gating über D3 / GPIO 21)
-    system_digital_write(SENSOR_PWR_GPIO, HIGH);
-
-    // 2. RC-Tiefpassfilter einschwingen lassen (tau = ~4.7ms -> 25ms Warten für 99% Genauigkeit)
-    system_delay_ms(SENSOR_SETTLING_TIME_MS);
-
-    // 3. ADC-Kanäle abtasten: D0 (CH0), D1 (CH1), D2 (CH2)
+    // Power-Gating testweise deaktiviert: D3 bleibt dauerhaft auf HIGH (3.3V)
+    // 1. ADC-Kanäle abtasten: D0 (CH0), D1 (CH1), D2 (CH2)
     int raw1 = read_adc_channel_direct(PROBE1_CHANNEL);
     int raw2 = read_adc_channel_direct(PROBE2_CHANNEL);
     int raw_bat = read_adc_channel_direct(BAT_ADC_CHANNEL);
-
-    // 4. Sensor-Spannungsversorgung sofort wieder abschalten (Ruhestrom = 0 µA)
-    system_digital_write(SENSOR_PWR_GPIO, LOW);
 
     // 5. Messwerte berechnen
     float temp1 = calcFantast(raw1);
