@@ -4,9 +4,7 @@
 #include <system.h>
 #include <low_code.h>
 #include <esp_log.h>
-#include "soc/soc.h"
-#include "soc/apb_saradc_struct.h"
-#include "soc/pcr_struct.h"
+#include "esp_adc/adc_oneshot.h"
 #include "app_priv.h"
 
 static const char *TAG = "app_driver";
@@ -39,12 +37,7 @@ static const char *TAG = "app_driver";
 #define ADC_12BIT_MIN_RAW   4
 #define ADC_12BIT_MAX_RAW   3720
 
-// ESP32-C6 SARADC Register-Definitionen
-#define C6_SARADC1_ONESHOT_ENABLE_BIT  (1U << 31)
-#define C6_SARADC_START_BIT            (1U << 29)
-#define C6_SARADC_CH_SHIFT             25
-#define C6_SARADC_ATTEN_SHIFT          23
-#define C6_SARADC1_DONE_INT_BIT        (1U << 31)
+static adc_oneshot_unit_handle_t s_adc1_handle = NULL;
 
 struct sensor_endpoint_state_t {
     float last_reported_temp;
@@ -167,35 +160,15 @@ static void process_and_report_battery(uint32_t voltage_mv, uint32_t now_ms)
 
 static int read_adc_channel_direct(uint8_t channel)
 {
-    // 1. Kanal für ADC1 (Kanalformel ESP32-C6: (ADC_UNIT_1 << 3) | channel = 0 | channel)
-    uint32_t ch_val = (channel & 0x7);
-    uint32_t reg_val = C6_SARADC1_ONESHOT_ENABLE_BIT |
-                       (ch_val << C6_SARADC_CH_SHIFT) |
-                       (3U << C6_SARADC_ATTEN_SHIFT);
-    APB_SARADC.saradc_onetime_sample.val = reg_val;
-    lp_delay_cycles(1000); // ~50 µs Einschwingzeit für MUX und Kanalwahl
-
-    // 2. Vorherige Done-Interrupt-Flags zurücksetzen
-    APB_SARADC.saradc_int_clr.val = C6_SARADC1_DONE_INT_BIT;
-
-    // 3. Wandlung durch Start-Impuls triggern (Bit 29)
-    APB_SARADC.saradc_onetime_sample.val = reg_val | C6_SARADC_START_BIT;
-    lp_delay_cycles(200);
-    APB_SARADC.saradc_onetime_sample.val = reg_val; // Start-Bit zurücknehmen
-
-    // 4. Warten bis Messung abgeschlossen ist (saradc1_done_int_raw)
-    int timeout = 10000;
-    while (!(APB_SARADC.saradc_int_raw.val & C6_SARADC1_DONE_INT_BIT) && --timeout > 0) {
-        lp_delay_cycles(50);
+    if (!s_adc1_handle) {
+        return 0;
     }
-
-    uint32_t int_raw_val = APB_SARADC.saradc_int_raw.val;
-    uint32_t data_reg = APB_SARADC.saradc_sar1data_status.val;
-    int raw = (int)(data_reg & 0x0FFF);
-
-    ESP_LOGI(TAG, "ADC CH%u: raw=%d, timeout_left=%d, int_raw=0x%08lx, data_reg=0x%08lx",
-             channel, raw, timeout, (unsigned long)int_raw_val, (unsigned long)data_reg);
-
+    int raw = 0;
+    esp_err_t err = adc_oneshot_read(s_adc1_handle, (adc_channel_t)channel, &raw);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "adc_oneshot_read CH%u fehlgeschlagen: %s", channel, esp_err_to_name(err));
+        return 0;
+    }
     return raw;
 }
 
@@ -206,19 +179,24 @@ static void app_driver_timer_cb(system_timer_handle_t timer_handle, void *user_d
 
 int app_driver_init(void)
 {
-    // 1. SAR-ADC Bus & Clock auf ESP32-C6 aktivieren
-    PCR.saradc_clkm_conf.saradc_clkm_en = 1;
-    PCR.saradc_conf.saradc_reg_clk_en = 1;
-    PCR.saradc_conf.saradc_rst_en = 0;
-    // Clock-Divider und Taktquelle (XTAL) einrichten
-    PCR.saradc_clkm_conf.saradc_clkm_div_num = 15;
-    PCR.saradc_clkm_conf.saradc_clkm_div_b = 1;
-    PCR.saradc_clkm_conf.saradc_clkm_div_a = 0;
-    PCR.saradc_clkm_conf.saradc_clkm_sel = 0; // XTAL
-    APB_SARADC.saradc_ctrl.saradc_saradc_sar_clk_gated = 1;
-    APB_SARADC.saradc_ctrl.saradc_saradc_sar_clk_div = 1;
-    APB_SARADC.saradc_onetime_sample.saradc_saradc1_onetime_sample = 1;
-    APB_SARADC.saradc_onetime_sample.saradc_saradc_onetime_atten = 3;
+    // 1. Offiziellen ESP-IDF ADC-Oneshot-Treiber für ADC_UNIT_1 initialisieren
+    adc_oneshot_unit_init_cfg_t init_config1 = {
+        .unit_id = ADC_UNIT_1,
+        .clk_src = ADC_RTC_CLK_SRC_DEFAULT,
+        .ulp_mode = ADC_ULP_MODE_DISABLE,
+    };
+    esp_err_t ret = adc_oneshot_new_unit(&init_config1, &s_adc1_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "adc_oneshot_new_unit fehlgeschlagen: %s", esp_err_to_name(ret));
+    } else {
+        adc_oneshot_chan_cfg_t chan_config = {
+            .atten = ADC_ATTEN_DB_12,
+            .bitwidth = ADC_BITWIDTH_12,
+        };
+        adc_oneshot_config_channel(s_adc1_handle, (adc_channel_t)PROBE1_CHANNEL, &chan_config);
+        adc_oneshot_config_channel(s_adc1_handle, (adc_channel_t)PROBE2_CHANNEL, &chan_config);
+        adc_oneshot_config_channel(s_adc1_handle, (adc_channel_t)BAT_ADC_CHANNEL, &chan_config);
+    }
 
     // 2. Seeed Studio XIAO ESP32-C6 Antennenschalter konfigurieren
     system_set_pin_mode(ANT_CTRL_EN_GPIO, OUTPUT);
