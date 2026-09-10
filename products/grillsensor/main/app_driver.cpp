@@ -193,10 +193,8 @@ static int read_adc_channel_direct(uint8_t channel)
     uint32_t data_reg = APB_SARADC.saradc_sar1data_status.val;
     int raw = (int)(data_reg & 0x0FFF);
 
-    if (timeout <= 0) {
-        ESP_LOGW(TAG, "ADC CH%u Timeout! int_raw=0x%08lx, data_reg=0x%08lx", 
-                 channel, (unsigned long)int_raw_val, (unsigned long)data_reg);
-    }
+    ESP_LOGI(TAG, "ADC CH%u: raw=%d, timeout_left=%d, int_raw=0x%08lx, data_reg=0x%08lx",
+             channel, raw, timeout, (unsigned long)int_raw_val, (unsigned long)data_reg);
 
     return raw;
 }
