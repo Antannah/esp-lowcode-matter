@@ -176,19 +176,18 @@ static int read_adc_channel_direct(uint8_t channel)
 
     // 2. Event clearen
     adc_oneshot_ll_clear_event(ADC_LL_EVENT_ADC1_ONESHOT_DONE);
-    esp_rom_delay_us(5);
 
-    // 3. Flanke nach adc_hal_common.c: erst start=false, dann start=true
-    adc_oneshot_ll_start(false);
-    esp_rom_delay_us(5);
+    // 3. Hardware-Trigger: Impuls muss mindestens 3 ADC-Takte anliegen (~10 µs)
     adc_oneshot_ll_start(true);
+    esp_rom_delay_us(20);
+    adc_oneshot_ll_start(false);
+    esp_rom_delay_us(20);
 
     // 4. Warten bis Wandlung fertig ist
-    int timeout = 5000;
+    int timeout = 10000;
     while (!adc_oneshot_ll_get_event(ADC_LL_EVENT_ADC1_ONESHOT_DONE) && --timeout > 0) {
-        esp_rom_delay_us(2);
+        esp_rom_delay_us(5);
     }
-    adc_oneshot_ll_start(false);
 
     // 5. Rohwert auslesen
     int raw = (int)adc_oneshot_ll_get_raw_result(ADC_UNIT_1);
@@ -216,6 +215,7 @@ int app_driver_init(void)
     adc_ll_digi_controller_clk_div(ADC_LL_CLKM_DIV_NUM_DEFAULT, ADC_LL_CLKM_DIV_B_DEFAULT, ADC_LL_CLKM_DIV_A_DEFAULT);
     adc_ll_digi_set_clk_div(ADC_LL_DIGI_SAR_CLK_DIV_DEFAULT);
     adc_ll_digi_clk_sel(ADC_DIGI_CLK_SRC_XTAL);
+    adc_ll_set_power_manage(ADC_UNIT_1, ADC_LL_POWER_SW_ON);
     adc_oneshot_ll_enable(ADC_UNIT_1);
 
     // 2. Seeed Studio XIAO ESP32-C6 Antennenschalter konfigurieren
