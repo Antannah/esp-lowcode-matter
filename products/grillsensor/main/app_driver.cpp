@@ -167,23 +167,24 @@ static void process_and_report_battery(uint32_t voltage_mv, uint32_t now_ms)
 
 static int read_adc_channel_direct(uint8_t channel)
 {
-    // 1. Kanal (Bits [28:25]), Attenuation 11/12dB (Bits [24:23]) & ADC1 Oneshot Enable (Bit 31) setzen
+    // 1. Kanal für ADC1 (Kanalformel ESP32-C6: (ADC_UNIT_1 << 3) | channel = 0 | channel)
+    uint32_t ch_val = (channel & 0x7);
     uint32_t reg_val = C6_SARADC1_ONESHOT_ENABLE_BIT |
-                       ((uint32_t)(channel & 0x7) << C6_SARADC_CH_SHIFT) |
+                       (ch_val << C6_SARADC_CH_SHIFT) |
                        (3U << C6_SARADC_ATTEN_SHIFT);
     APB_SARADC.saradc_onetime_sample.val = reg_val;
-    lp_delay_cycles(200); // Stabilisierungszeit für Kanalwahl
+    lp_delay_cycles(1000); // ~50 µs Einschwingzeit für MUX und Kanalwahl
 
     // 2. Vorherige Done-Interrupt-Flags zurücksetzen
     APB_SARADC.saradc_int_clr.val = C6_SARADC1_DONE_INT_BIT;
 
     // 3. Wandlung durch Start-Impuls triggern (Bit 29)
     APB_SARADC.saradc_onetime_sample.val = reg_val | C6_SARADC_START_BIT;
-    lp_delay_cycles(50);
+    lp_delay_cycles(200);
     APB_SARADC.saradc_onetime_sample.val = reg_val; // Start-Bit zurücknehmen
 
     // 4. Warten bis Messung abgeschlossen ist (saradc1_done_int_raw)
-    int timeout = 4000;
+    int timeout = 10000;
     while (!(APB_SARADC.saradc_int_raw.val & C6_SARADC1_DONE_INT_BIT) && --timeout > 0) {
         lp_delay_cycles(50);
     }
@@ -205,7 +206,13 @@ int app_driver_init(void)
     PCR.saradc_clkm_conf.saradc_clkm_en = 1;
     PCR.saradc_conf.saradc_reg_clk_en = 1;
     PCR.saradc_conf.saradc_rst_en = 0;
+    // Clock-Divider und Taktquelle (XTAL) einrichten
+    PCR.saradc_clkm_conf.saradc_clkm_div_num = 15;
+    PCR.saradc_clkm_conf.saradc_clkm_div_b = 1;
+    PCR.saradc_clkm_conf.saradc_clkm_div_a = 0;
+    PCR.saradc_clkm_conf.saradc_clkm_sel = 0; // XTAL
     APB_SARADC.saradc_ctrl.saradc_saradc_sar_clk_gated = 1;
+    APB_SARADC.saradc_ctrl.saradc_saradc_sar_clk_div = 1;
     APB_SARADC.saradc_onetime_sample.saradc_saradc1_onetime_sample = 1;
     APB_SARADC.saradc_onetime_sample.saradc_saradc_onetime_atten = 3;
 
@@ -259,8 +266,8 @@ int app_driver_feature_update(void)
     int t2_int = (int)temp2;
     int t2_dec = (int)(fabsf(temp2 - (float)t2_int) * 10.0f);
 
-    ESP_LOGI(TAG, "Messung -> F1: %d.%d °C | F2: %d.%d °C | Batterie: %lu mV (RAW: %d)",
-             t1_int, t1_dec, t2_int, t2_dec, (unsigned long)bat_mv, raw_bat);
+    ESP_LOGI(TAG, "Messung -> F1: %d.%d °C (RAW: %d) | F2: %d.%d °C (RAW: %d) | Batterie: %lu mV (RAW: %d)",
+             t1_int, t1_dec, raw1, t2_int, t2_dec, raw2, (unsigned long)bat_mv, raw_bat);
 
     // 6. Delta- und Heartbeat-Reporting ausführen
     uint32_t now = system_get_time();
