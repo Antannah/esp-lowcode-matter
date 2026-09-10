@@ -39,12 +39,12 @@ static const char *TAG = "app_driver";
 #define ADC_12BIT_MIN_RAW   4
 #define ADC_12BIT_MAX_RAW   3720
 
-#define ONESHOT_MODE_BIT      (1U << 0)
-#define ONESHOT_CH_SHIFT      1
-#define ONESHOT_ATTEN_SHIFT   23
-#define ONESHOT_START_BIT     (1U << 25)
-#define ONESHOT_DONE_BIT      (1U << 26)
-#define ONESHOT_DATA_SHIFT    27
+// ESP32-C6 SARADC Register-Definitionen
+#define C6_SARADC1_ONESHOT_ENABLE_BIT  (1U << 31)
+#define C6_SARADC_START_BIT            (1U << 29)
+#define C6_SARADC_CH_SHIFT             25
+#define C6_SARADC_ATTEN_SHIFT          23
+#define C6_SARADC1_DONE_INT_BIT        (1U << 31)
 
 struct sensor_endpoint_state_t {
     float last_reported_temp;
@@ -167,23 +167,30 @@ static void process_and_report_battery(uint32_t voltage_mv, uint32_t now_ms)
 
 static int read_adc_channel_direct(uint8_t channel)
 {
-    uint32_t reg_val = ONESHOT_MODE_BIT |
-                       ((uint32_t)(channel & 0x7) << ONESHOT_CH_SHIFT) |
-                       (3U << ONESHOT_ATTEN_SHIFT);
+    // 1. Kanal (Bits [28:25]), Attenuation 11/12dB (Bits [24:23]) & ADC1 Oneshot Enable (Bit 31) setzen
+    uint32_t reg_val = C6_SARADC1_ONESHOT_ENABLE_BIT |
+                       ((uint32_t)(channel & 0x7) << C6_SARADC_CH_SHIFT) |
+                       (3U << C6_SARADC_ATTEN_SHIFT);
     APB_SARADC.saradc_onetime_sample.val = reg_val;
-    lp_delay_cycles(100);
+    lp_delay_cycles(200); // Stabilisierungszeit für Kanalwahl
 
-    APB_SARADC.saradc_onetime_sample.val = reg_val | ONESHOT_START_BIT;
+    // 2. Vorherige Done-Interrupt-Flags zurücksetzen
+    APB_SARADC.saradc_int_clr.val = C6_SARADC1_DONE_INT_BIT;
 
-    int timeout = 2000;
-    while (!(APB_SARADC.saradc_onetime_sample.val & ONESHOT_DONE_BIT) && --timeout > 0) {
+    // 3. Wandlung durch Start-Impuls triggern (Bit 29)
+    APB_SARADC.saradc_onetime_sample.val = reg_val | C6_SARADC_START_BIT;
+    lp_delay_cycles(50);
+    APB_SARADC.saradc_onetime_sample.val = reg_val; // Start-Bit zurücknehmen
+
+    // 4. Warten bis Messung abgeschlossen ist (saradc1_done_int_raw)
+    int timeout = 4000;
+    while (!(APB_SARADC.saradc_int_raw.val & C6_SARADC1_DONE_INT_BIT) && --timeout > 0) {
         lp_delay_cycles(50);
     }
 
-    uint32_t final_val = APB_SARADC.saradc_onetime_sample.val;
-    int raw = (final_val >> ONESHOT_DATA_SHIFT) & 0x0FFF;
+    // 5. 12-Bit Rohwert aus dem dedizierten ESP32-C6 Datenregister auslesen
+    int raw = (int)(APB_SARADC.saradc_sar1data_status.saradc_apb_saradc1_data & 0x0FFF);
 
-    APB_SARADC.saradc_onetime_sample.val = reg_val;
     return raw;
 }
 
@@ -198,6 +205,9 @@ int app_driver_init(void)
     PCR.saradc_clkm_conf.saradc_clkm_en = 1;
     PCR.saradc_conf.saradc_reg_clk_en = 1;
     PCR.saradc_conf.saradc_rst_en = 0;
+    APB_SARADC.saradc_ctrl.saradc_saradc_sar_clk_gated = 1;
+    APB_SARADC.saradc_onetime_sample.saradc_saradc1_onetime_sample = 1;
+    APB_SARADC.saradc_onetime_sample.saradc_saradc_onetime_atten = 3;
 
     // 2. Seeed Studio XIAO ESP32-C6 Antennenschalter konfigurieren
     system_set_pin_mode(ANT_CTRL_EN_GPIO, OUTPUT);
