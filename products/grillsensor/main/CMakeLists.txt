@@ -7,5 +7,4 @@ idf_component_register(
         button 
         light 
         hal
-        ulp
 )

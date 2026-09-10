@@ -4,7 +4,8 @@
 #include <system.h>
 #include <low_code.h>
 #include <esp_log.h>
-#include "ulp_lp_core_lp_adc_shared.h"
+#include "hal/adc_ll.h"
+#include "soc/pcr_struct.h"
 #include "app_priv.h"
 
 static const char *TAG = "app_driver";
@@ -160,12 +161,37 @@ static void process_and_report_battery(uint32_t voltage_mv, uint32_t now_ms)
 
 static int read_adc_channel_direct(uint8_t channel)
 {
-    int raw = 0;
-    esp_err_t err = lp_core_lp_adc_read_channel_raw(ADC_UNIT_1, (adc_channel_t)channel, &raw);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "lp_core_lp_adc_read_channel_raw CH%u fehlgeschlagen: %d", channel, (int)err);
-        return 0;
+    // 1. Kanal wählen & Attenuation setzen
+    adc_oneshot_ll_set_channel(ADC_UNIT_1, (adc_channel_t)channel);
+    adc_oneshot_ll_set_atten(ADC_UNIT_1, (adc_channel_t)channel, ADC_ATTEN_DB_12);
+
+    // 2. Oneshot-Modus aktivieren & einschwingen lassen
+    adc_oneshot_ll_enable(ADC_UNIT_1);
+    lp_delay_cycles(500);
+
+    // 3. Vorheriges Done-Event clearen
+    adc_oneshot_ll_clear_event(ADC_LL_EVENT_ADC1_ONESHOT_DONE);
+
+    // 4. Start-Puls senden
+    adc_oneshot_ll_start(true);
+    lp_delay_cycles(100);
+    adc_oneshot_ll_start(false);
+
+    // 5. Warten bis Wandlung fertig ist
+    int timeout = 5000;
+    while (!adc_oneshot_ll_get_event(ADC_LL_EVENT_ADC1_ONESHOT_DONE) && --timeout > 0) {
+        lp_delay_cycles(20);
     }
+
+    // 6. Rohwert auslesen
+    int raw = (int)adc_oneshot_ll_get_raw_result(ADC_UNIT_1);
+
+    uint32_t int_raw_val = APB_SARADC.saradc_int_raw.val;
+    uint32_t data_reg = APB_SARADC.saradc_sar1data_status.val;
+
+    ESP_LOGI(TAG, "ADC CH%u: raw=%d, timeout_left=%d, int_raw=0x%08lx, data_reg=0x%08lx",
+             channel, raw, timeout, (unsigned long)int_raw_val, (unsigned long)data_reg);
+
     return raw;
 }
 
@@ -176,19 +202,14 @@ static void app_driver_timer_cb(system_timer_handle_t timer_handle, void *user_d
 
 int app_driver_init(void)
 {
-    // 1. Offiziellen ULP LP-Core ADC-Treiber für ADC_UNIT_1 initialisieren
-    esp_err_t ret = lp_core_lp_adc_init(ADC_UNIT_1);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "lp_core_lp_adc_init fehlgeschlagen: %d", (int)ret);
-    } else {
-        lp_core_lp_adc_chan_cfg_t chan_config = {
-            .atten = ADC_ATTEN_DB_12,
-            .bitwidth = ADC_BITWIDTH_12,
-        };
-        lp_core_lp_adc_config_channel(ADC_UNIT_1, (adc_channel_t)PROBE1_CHANNEL, &chan_config);
-        lp_core_lp_adc_config_channel(ADC_UNIT_1, (adc_channel_t)PROBE2_CHANNEL, &chan_config);
-        lp_core_lp_adc_config_channel(ADC_UNIT_1, (adc_channel_t)BAT_ADC_CHANNEL, &chan_config);
-    }
+    // 1. SAR-ADC Clock & Power über ESP32-C6 PCR initialisieren
+    PCR.saradc_clkm_conf.saradc_clkm_en = 1;
+    PCR.saradc_conf.saradc_reg_clk_en = 1;
+    PCR.saradc_conf.saradc_rst_en = 0;
+    adc_ll_digi_controller_clk_div(ADC_LL_CLKM_DIV_NUM_DEFAULT, ADC_LL_CLKM_DIV_B_DEFAULT, ADC_LL_CLKM_DIV_A_DEFAULT);
+    adc_ll_digi_set_clk_div(ADC_LL_DIGI_SAR_CLK_DIV_DEFAULT);
+    adc_ll_digi_clk_sel(ADC_DIGI_CLK_SRC_XTAL);
+    adc_oneshot_ll_enable(ADC_UNIT_1);
 
     // 2. Seeed Studio XIAO ESP32-C6 Antennenschalter konfigurieren
     system_set_pin_mode(ANT_CTRL_EN_GPIO, OUTPUT);
