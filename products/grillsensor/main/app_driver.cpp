@@ -189,8 +189,14 @@ static int read_adc_channel_direct(uint8_t channel)
         lp_delay_cycles(50);
     }
 
-    // 5. 12-Bit Rohwert aus dem dedizierten ESP32-C6 Datenregister auslesen
-    int raw = (int)(APB_SARADC.saradc_sar1data_status.saradc_apb_saradc1_data & 0x0FFF);
+    uint32_t int_raw_val = APB_SARADC.saradc_int_raw.val;
+    uint32_t data_reg = APB_SARADC.saradc_sar1data_status.val;
+    int raw = (int)(data_reg & 0x0FFF);
+
+    if (timeout <= 0) {
+        ESP_LOGW(TAG, "ADC CH%u Timeout! int_raw=0x%08lx, data_reg=0x%08lx", 
+                 channel, (unsigned long)int_raw_val, (unsigned long)data_reg);
+    }
 
     return raw;
 }
