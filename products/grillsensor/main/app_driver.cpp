@@ -4,7 +4,7 @@
 #include <system.h>
 #include <low_code.h>
 #include <esp_log.h>
-#include "esp_adc/adc_oneshot.h"
+#include "ulp_lp_core_lp_adc_shared.h"
 #include "app_priv.h"
 
 static const char *TAG = "app_driver";
@@ -37,7 +37,7 @@ static const char *TAG = "app_driver";
 #define ADC_12BIT_MIN_RAW   4
 #define ADC_12BIT_MAX_RAW   3720
 
-static adc_oneshot_unit_handle_t s_adc1_handle = NULL;
+// ULP LP Core ADC
 
 struct sensor_endpoint_state_t {
     float last_reported_temp;
@@ -160,13 +160,10 @@ static void process_and_report_battery(uint32_t voltage_mv, uint32_t now_ms)
 
 static int read_adc_channel_direct(uint8_t channel)
 {
-    if (!s_adc1_handle) {
-        return 0;
-    }
     int raw = 0;
-    esp_err_t err = adc_oneshot_read(s_adc1_handle, (adc_channel_t)channel, &raw);
+    esp_err_t err = lp_core_lp_adc_read_channel_raw(ADC_UNIT_1, (adc_channel_t)channel, &raw);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "adc_oneshot_read CH%u fehlgeschlagen: %s", channel, esp_err_to_name(err));
+        ESP_LOGE(TAG, "lp_core_lp_adc_read_channel_raw CH%u fehlgeschlagen: %d", channel, (int)err);
         return 0;
     }
     return raw;
@@ -179,23 +176,18 @@ static void app_driver_timer_cb(system_timer_handle_t timer_handle, void *user_d
 
 int app_driver_init(void)
 {
-    // 1. Offiziellen ESP-IDF ADC-Oneshot-Treiber für ADC_UNIT_1 initialisieren
-    adc_oneshot_unit_init_cfg_t init_config1 = {
-        .unit_id = ADC_UNIT_1,
-        .clk_src = ADC_RTC_CLK_SRC_DEFAULT,
-        .ulp_mode = ADC_ULP_MODE_DISABLE,
-    };
-    esp_err_t ret = adc_oneshot_new_unit(&init_config1, &s_adc1_handle);
+    // 1. Offiziellen ULP LP-Core ADC-Treiber für ADC_UNIT_1 initialisieren
+    esp_err_t ret = lp_core_lp_adc_init(ADC_UNIT_1);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "adc_oneshot_new_unit fehlgeschlagen: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "lp_core_lp_adc_init fehlgeschlagen: %d", (int)ret);
     } else {
-        adc_oneshot_chan_cfg_t chan_config = {
+        lp_core_lp_adc_chan_cfg_t chan_config = {
             .atten = ADC_ATTEN_DB_12,
             .bitwidth = ADC_BITWIDTH_12,
         };
-        adc_oneshot_config_channel(s_adc1_handle, (adc_channel_t)PROBE1_CHANNEL, &chan_config);
-        adc_oneshot_config_channel(s_adc1_handle, (adc_channel_t)PROBE2_CHANNEL, &chan_config);
-        adc_oneshot_config_channel(s_adc1_handle, (adc_channel_t)BAT_ADC_CHANNEL, &chan_config);
+        lp_core_lp_adc_config_channel(ADC_UNIT_1, (adc_channel_t)PROBE1_CHANNEL, &chan_config);
+        lp_core_lp_adc_config_channel(ADC_UNIT_1, (adc_channel_t)PROBE2_CHANNEL, &chan_config);
+        lp_core_lp_adc_config_channel(ADC_UNIT_1, (adc_channel_t)BAT_ADC_CHANNEL, &chan_config);
     }
 
     // 2. Seeed Studio XIAO ESP32-C6 Antennenschalter konfigurieren
