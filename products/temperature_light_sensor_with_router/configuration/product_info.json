@@ -1,0 +1,19 @@
+{
+    "config_version": 3,
+    "vendor_id": 65521,
+    "product_id": 32769,
+    "origin_vendor_id": 65521,
+    "origin_product_id": 32769,
+    "device_type_id": 1,
+    "vendor_name": "Espressif",
+    "product_name": "Temperature Light Sensor with Router",
+    "hw_ver": 1,
+    "hw_ver_str": "1",
+    "chip": "esp32c6",
+    "connection_type": "thread",
+    "module": "ESP32-C6 Super Mini",
+    "flash_size": "4MB",
+    "secure_boot": "enabled",
+    "product_type": "temperature_light_sensor_with_router",
+    "solution_type": "low_code"
+}
