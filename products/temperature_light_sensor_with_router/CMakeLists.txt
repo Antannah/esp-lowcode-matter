@@ -3,8 +3,7 @@ cmake_minimum_required(VERSION 3.16)
 
 include(../../tools/cmake/low_code.cmake)
 
-# Use absolute path to ensure the common defaults are always loaded
-list(APPEND SDKCONFIG_DEFAULTS "/workspace/esp-lowcode-matter/products/common/sdkconfig.defaults")
+list(APPEND SDKCONFIG_DEFAULTS "sdkconfig.defaults")
 
 list(APPEND EXTRA_COMPONENT_DIRS
     ../../components

@@ -318,23 +318,18 @@ static int light_driver_update(void)
 
 int light_driver_set_brightness(uint8_t val)
 {
-    printf("%s(%d)\n", __func__, val);
-
     g_light.cur_brightness = val;
     return light_driver_update();
 }
 
 int light_driver_set_power(uint8_t val)
 {
-    printf("%s:(%d)\n", __func__, val);
     g_light.cur_level = val;
     return light_driver_update();
 }
 
 int light_driver_set_hue(uint16_t val)
 {
-    printf("%s(%d)\n", __func__, val);
-
     if (g_light.channel_comb == LIGHT_CHANNEL_COMB_1CH_C
                 || g_light.channel_comb == LIGHT_CHANNEL_COMB_1CH_W
                 || g_light.channel_comb == LIGHT_CHANNEL_COMB_2CH_CW) {
@@ -348,7 +343,6 @@ int light_driver_set_hue(uint16_t val)
 
 int light_driver_set_saturation(uint8_t val)
 {
-    printf("%s(%d)\n", __func__, val);
     if (g_light.channel_comb == LIGHT_CHANNEL_COMB_1CH_C
                 || g_light.channel_comb == LIGHT_CHANNEL_COMB_1CH_W
                 || g_light.channel_comb == LIGHT_CHANNEL_COMB_2CH_CW) {
@@ -375,7 +369,6 @@ int light_driver_set_temperature(uint32_t val)
 int light_driver_set_color_mode(uint8_t val)
 {
     int ret = 0;
-    printf("%s(%d)\n", __func__, val);
 
     if (val != LIGHT_WORK_MODE_COLOR && val != LIGHT_WORK_MODE_WHITE) {
         printf("%s: Unrecognized work mode\n", __func__);

@@ -2,6 +2,10 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @brief Initialize the SHT40 temperature and humidity sensor.
  * 
@@ -19,3 +23,7 @@ int temperature_sensor_sht40_init(int i2c_port);
  * @return 0 on success, non-zero on failure.
  */
 int temperature_sensor_sht40_get_data(int i2c_port, float *temperature, float *humidity);
+
+#ifdef __cplusplus
+}
+#endif

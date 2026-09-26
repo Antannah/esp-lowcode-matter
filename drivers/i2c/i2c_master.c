@@ -164,6 +164,15 @@ int i2c_master_read_from_device(int i2c_port, uint16_t device_addr,
         return ESP_OK;
     }
 
+    /* If SCL is busy, reset the Master FSM */
+    if (i2c_ll_is_bus_busy(dev)) {
+        i2c_ll_master_fsm_rst(dev);
+    }
+
+    /* Reset the Tx and Rx FIFOs */
+    i2c_ll_txfifo_rst(dev);
+    i2c_ll_rxfifo_rst(dev);
+
     /* Execute RSTART command to send the START bit */
     i2c_format_cmd(dev, cmd_idx++, I2C_LL_CMD_RESTART, 0, 0, 0, 0);
 
@@ -173,6 +182,10 @@ int i2c_master_read_from_device(int i2c_port, uint16_t device_addr,
 
     /* Enable trans complete interrupt and end detect interrupt for read/write operation */
     uint32_t intr_mask = (1 << I2C_TRANS_COMPLETE_INT_ST_S) | (1 << I2C_END_DETECT_INT_ST_S);
+    if (s_ack_check_en) {
+        /* Enable I2C_NACK_INT to check for ACK errors on address byte */
+        intr_mask |= (1 << I2C_NACK_INT_ST_S);
+    }
     i2c_ll_enable_intr_mask(dev, intr_mask);
 
     /* Read data */
@@ -220,6 +233,9 @@ int i2c_master_read_from_device(int i2c_port, uint16_t device_addr,
         /* Initiate I2C transfer */
         i2c_ll_update(dev);
         i2c_ll_master_trans_start(dev);
+
+        // Wait for 10ms
+        ulp_lp_core_delay_us(10000);
 
         /* Wait for the transfer to complete */
         ret = i2c_wait_for_interrupt(dev, intr_mask, ticks_to_wait);
@@ -354,22 +370,76 @@ int i2c_master_write_read_device(int i2c_port, uint16_t device_addr,
                                                uint8_t *data_rd, size_t read_size,
                                                int32_t ticks_to_wait)
 {
-    if ((write_size == 0) || (read_size == 0)) {
-        // Quietly return
+    if ((write_size == 0) || (read_size == 0) || (write_size > 14) || (read_size > 14)) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    esp_err_t ret = ESP_OK;
-
-    ret = i2c_master_write_to_device(i2c_port, device_addr, data_wr, write_size, ticks_to_wait);
-    if (ret != ESP_OK) {
-        printf("%s: failed to write to device\n", TAG);
-        return ret;
+    if (i2c_port >= SOC_I2C_NUM) {
+        printf("%s: Invalid i2c_port passed\n", TAG);
+        return -1;
     }
-    ret = i2c_master_read_from_device(i2c_port, device_addr, data_rd, read_size, ticks_to_wait);
-    if (ret != ESP_OK) {
-        printf("%s: failed to read from device\n", TAG);
-        return ret;
+
+    i2c_dev_t *dev = I2C_LL_GET_HW(i2c_port);
+    bool is_lp_i2c = (i2c_port < SOC_HP_I2C_NUM) ? false : true;
+    if (is_lp_i2c) {
+        ulp_lp_core_intr_disable();
+    }
+
+    if (i2c_ll_is_bus_busy(dev)) {
+        i2c_ll_master_fsm_rst(dev);
+    }
+    i2c_ll_txfifo_rst(dev);
+    i2c_ll_rxfifo_rst(dev);
+
+    uint32_t cmd_idx = 0;
+    uint8_t addr_len = 0;
+
+    // 1. START
+    i2c_format_cmd(dev, cmd_idx++, I2C_LL_CMD_RESTART, 0, 0, 0, 0);
+
+    // 2. Device Address (WRITE)
+    i2c_config_device_addr(dev, cmd_idx++, device_addr, I2C_WRITE_MODE, &addr_len);
+
+    // 3. Write data (e.g. register address)
+    i2c_ll_write_txfifo(dev, data_wr, write_size);
+    i2c_format_cmd(dev, cmd_idx++, I2C_LL_CMD_WRITE, 0, I2C_ACK, s_ack_check_en, write_size);
+
+    // 4. REPEATED START (Sr) - No STOP in between!
+    i2c_format_cmd(dev, cmd_idx++, I2C_LL_CMD_RESTART, 0, 0, 0, 0);
+
+    // 5. Device Address (READ)
+    i2c_config_device_addr(dev, cmd_idx++, device_addr, I2C_READ_MODE, &addr_len);
+
+    // 6. Read bytes
+    if (read_size == 1) {
+        i2c_format_cmd(dev, cmd_idx++, I2C_LL_CMD_READ, I2C_NACK, 0, 0, 1);
+    } else {
+        i2c_format_cmd(dev, cmd_idx++, I2C_LL_CMD_READ, I2C_ACK, 0, 0, read_size - 1);
+        i2c_format_cmd(dev, cmd_idx++, I2C_LL_CMD_READ, I2C_NACK, 0, 0, 1);
+    }
+
+    // 7. STOP
+    i2c_format_cmd(dev, cmd_idx++, I2C_LL_CMD_STOP, 0, 0, 0, 0);
+
+    // Enable interrupts
+    uint32_t intr_mask = (1 << I2C_TRANS_COMPLETE_INT_ST_S) | (1 << I2C_END_DETECT_INT_ST_S);
+    if (s_ack_check_en) {
+        intr_mask |= (1 << I2C_NACK_INT_ST_S);
+    }
+    i2c_ll_enable_intr_mask(dev, intr_mask);
+
+    // Execute transaction
+    i2c_ll_update(dev);
+    i2c_ll_master_trans_start(dev);
+    ulp_lp_core_delay_us(10000);
+
+    esp_err_t ret = i2c_wait_for_interrupt(dev, intr_mask, ticks_to_wait);
+    if (ret == ESP_OK) {
+        i2c_ll_read_rxfifo(dev, data_rd, read_size);
+    }
+
+    if (is_lp_i2c) {
+        ulp_lp_core_intr_enable();
     }
     return ret;
 }
@@ -416,7 +486,7 @@ static void s_hp_i2c_config_clk(i2c_dev_t *dev)
     soc_periph_i2c_clk_src_t source_clk = I2C_CLK_SRC_DEFAULT;
     i2c_ll_set_source_clk(dev, source_clk);
     i2c_hal_clk_config_t clk_cal = {0};
-    i2c_ll_master_cal_bus_clk(source_freq, 400000, &clk_cal);
+    i2c_ll_master_cal_bus_clk(source_freq, 100000, &clk_cal);
     i2c_ll_master_set_bus_timing(dev, &clk_cal);
 }
 
