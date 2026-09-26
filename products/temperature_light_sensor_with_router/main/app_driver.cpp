@@ -121,8 +121,8 @@ void app_driver_read_and_report_feature(system_timer_handle_t timer_handle, void
     int hum_int = (int)humidity;
     int hum_dec = abs((int)(humidity * 100.0f) % 100);
 
-    printf("%s: Reported Temp: %d.%02d C, Hum: %d.%02d %%, Lux: %u\n", 
-           TAG, temp_int, temp_dec, hum_int, hum_dec, (unsigned int)lux);
+    printf("%s: Reported Temp: %d.%02d C, Hum: %d.%02d %s, Lux: %u\n", 
+           TAG, temp_int, temp_dec, hum_int, hum_dec, "%", (unsigned int)lux);
 }
 
 #define LED_GPIO_NUM (gpio_num_t)8
