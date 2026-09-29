@@ -56,7 +56,14 @@ static void app_driver_report_humidity(float hum)
     low_code_feature_data_t update_data = {
         .details = {
             .endpoint_id = 2,
-            .feature_id = LOW_CODE_FEATURE_ID_HUMIDITY_SENSOR_VALUE
+            .feature_id = LOW_CODE_FEATURE_ID_UNHANDLED,
+            .low_level = {
+                .matter = {
+                    .cluster_id = 0x0405,   // Relative Humidity Measurement Cluster
+                    .attribute_id = 0x0000, // MeasuredValue Attribute
+                    .command_id = 0,
+                }
+            }
         },
         .value = {
             .type = LOW_CODE_VALUE_TYPE_UNSIGNED_INTEGER,
@@ -84,7 +91,14 @@ static void app_driver_report_illuminance(uint16_t lux)
     low_code_feature_data_t update_data = {
         .details = {
             .endpoint_id = 3,
-            .feature_id = LOW_CODE_FEATURE_ID_ILLUMINANCE_SENSOR_VALUE
+            .feature_id = LOW_CODE_FEATURE_ID_UNHANDLED,
+            .low_level = {
+                .matter = {
+                    .cluster_id = 0x0400,   // Illuminance Measurement Cluster
+                    .attribute_id = 0x0000, // MeasuredValue Attribute
+                    .command_id = 0,
+                }
+            }
         },
         .value = {
             .type = LOW_CODE_VALUE_TYPE_UNSIGNED_INTEGER,
@@ -125,85 +139,28 @@ void app_driver_read_and_report_feature(system_timer_handle_t timer_handle, void
            TAG, temp_int, temp_dec, hum_int, hum_dec, "%", (unsigned int)lux);
 }
 
-#define LED_GPIO_NUM (gpio_num_t)8
-
-static system_timer_handle_t s_led_timer = NULL;
-static bool s_led_state = false;
-static bool s_ws2812_inited = false;
-
-static void ws2812_set_color(bool on, uint16_t hue, uint8_t sat, uint8_t bri)
-{
-    if (!s_ws2812_inited) {
-        light_driver_config_t cfg = {
-            .device_type = LIGHT_DEVICE_TYPE_WS2812,
-            .channel_comb = LIGHT_CHANNEL_COMB_3CH_RGB,
-            .io_conf = {
-                .ws2812_io = {
-                    .ctrl_io = LED_GPIO_NUM,
-                },
-            },
-            .min_brightness = 0,
-            .max_brightness = 100,
-        };
-        light_driver_init(&cfg);
-        s_ws2812_inited = true;
-    }
-    if (on) {
-        light_driver_set_power(1);
-        light_driver_set_hue(hue);
-        light_driver_set_saturation(sat);
-        light_driver_set_brightness(bri);
-    } else {
-        light_driver_set_power(0);
-    }
-}
-
-static void app_driver_led_blink_cb(system_timer_handle_t timer_handle, void *user_data)
-{
-    s_led_state = !s_led_state;
-    // 1) Set standard digital GPIO (active-low: LOW = ON, HIGH = OFF)
-    system_digital_write((int)LED_GPIO_NUM, s_led_state ? LOW : HIGH);
-    // 2) If it's a WS2812 RGB LED on GPIO8, output blue blink / off
-    if (s_led_state) {
-        ws2812_set_color(true, 240, 100, 50); // Blue
-    } else {
-        ws2812_set_color(false, 0, 0, 0);      // Off
-    }
-}
-
-void app_driver_led_start_blinking(uint32_t period_ms)
-{
-    if (!s_led_timer) {
-        s_led_timer = system_timer_create(app_driver_led_blink_cb, NULL, period_ms, true);
-    }
-    if (s_led_timer) {
-        system_timer_start(s_led_timer);
-    }
-}
-
-void app_driver_led_stop(bool state_on)
-{
-    if (s_led_timer) {
-        system_timer_stop(s_led_timer);
-    }
-    system_digital_write((int)LED_GPIO_NUM, state_on ? LOW : HIGH);
-    if (state_on) {
-        ws2812_set_color(true, 120, 100, 50); // Green when connected
-    } else {
-        ws2812_set_color(false, 0, 0, 0);     // Off
-    }
-}
-
-void app_driver_led_init()
-{
-    system_set_pin_mode((int)LED_GPIO_NUM, OUTPUT);
-    app_driver_led_start_blinking(500);
-}
+#define WS2812_CTRL_IO ((gpio_num_t)8)
 
 int app_driver_init()
 {
     printf("%s: Initializing driver (SCL=GPIO%d, SDA=GPIO%d)\n", 
            TAG, (int)I2C_SCL_IO, (int)I2C_SDA_IO);
+
+    /* Initialize light driver for status LED */
+    printf("%s: Initializing light driver\n", TAG);
+    light_driver_config_t cfg = {
+        .device_type = LIGHT_DEVICE_TYPE_WS2812,
+        .channel_comb = LIGHT_CHANNEL_COMB_3CH_RGB,
+        .io_conf = {
+            .ws2812_io = {
+                .ctrl_io = WS2812_CTRL_IO,
+            },
+        },
+        .min_brightness = 0,
+        .max_brightness = 100,
+    };
+    light_driver_init(&cfg);
+    light_driver_set_power(1);
 
     // Initialize I2C: i2c_master_init(port, scl_io, sda_io)
     if (i2c_master_init(I2C_PORT, I2C_SCL_IO, I2C_SDA_IO) != 0) {
@@ -249,22 +206,57 @@ int app_driver_feature_update()
 int app_driver_event_handler(low_code_event_t *event)
 {
     printf("%s: Received event: %d\n", TAG, event->event_type);
+    light_effect_config_t effect_config = {
+        .type = LIGHT_EFFECT_INVALID,
+        .mode = LIGHT_WORK_MODE_COLOR,
+        .max_brightness = 100,
+        .min_brightness = 10
+    };
+
     switch (event->event_type) {
         case LOW_CODE_EVENT_SETUP_MODE_START:
-            printf("%s: Commissioning setup mode started (LED blinking)\n", TAG);
-            app_driver_led_start_blinking(500); // Blink every 500ms
+            printf("%s: Setup mode started\n", TAG);
+            effect_config.type = LIGHT_EFFECT_BLINK;
+            light_driver_effect_start(&effect_config, 2000, 120000);
+            break;
+        case LOW_CODE_EVENT_SETUP_MODE_END:
+            printf("%s: Setup mode ended\n", TAG);
+            light_driver_effect_stop();
+            break;
+        case LOW_CODE_EVENT_SETUP_DEVICE_CONNECTED:
+            printf("%s: Device connected during setup\n", TAG);
+            break;
+        case LOW_CODE_EVENT_SETUP_STARTED:
+            printf("%s: Setup process started\n", TAG);
             break;
         case LOW_CODE_EVENT_SETUP_SUCCESSFUL:
-            printf("%s: Commissioning successful\n", TAG);
-            app_driver_led_stop(true); // LED ON
+            printf("%s: Setup process successful\n", TAG);
+            light_driver_effect_stop();
+            break;
+        case LOW_CODE_EVENT_SETUP_FAILED:
+            printf("%s: Setup process failed\n", TAG);
+            light_driver_effect_stop();
             break;
         case LOW_CODE_EVENT_NETWORK_CONNECTED:
-            printf("%s: Thread network connected\n", TAG);
-            app_driver_led_stop(false); // LED OFF after connected
+            printf("%s: Network connected\n", TAG);
+            light_driver_effect_stop();
             break;
         case LOW_CODE_EVENT_NETWORK_DISCONNECTED:
-            printf("%s: Thread network disconnected\n", TAG);
-            app_driver_led_start_blinking(1000); // Slow blink
+            printf("%s: Network disconnected\n", TAG);
+            effect_config.type = LIGHT_EFFECT_BREATHE;
+            light_driver_effect_start(&effect_config, 2000, 0);
+            break;
+        case LOW_CODE_EVENT_READY:
+            printf("%s: Device is ready\n", TAG);
+            break;
+        case LOW_CODE_EVENT_IDENTIFICATION_START:
+            printf("%s: Identification started\n", TAG);
+            effect_config.type = LIGHT_EFFECT_BLINK;
+            light_driver_effect_start(&effect_config, 500, 10000);
+            break;
+        case LOW_CODE_EVENT_IDENTIFICATION_STOP:
+            printf("%s: Identification stopped\n", TAG);
+            light_driver_effect_stop();
             break;
         default:
             break;
