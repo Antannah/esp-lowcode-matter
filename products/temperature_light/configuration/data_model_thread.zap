@@ -41,14 +41,16 @@
         "code": 22,
         "profileId": 259,
         "label": "MA-rootdevice",
-        "name": "MA-rootdevice"
+        "name": "MA-rootdevice",
+        "deviceTypeOrder": 0
       },
       "deviceTypes": [
         {
           "code": 22,
           "profileId": 259,
           "label": "MA-rootdevice",
-          "name": "MA-rootdevice"
+          "name": "MA-rootdevice",
+          "deviceTypeOrder": 0
         }
       ],
       "deviceVersions": [
@@ -1283,7 +1285,7 @@
               "storageOption": "RAM",
               "singleton": 0,
               "bounded": 0,
-              "defaultValue": "10",
+              "defaultValue": "5",
               "reportable": 1,
               "minInterval": 1,
               "maxInterval": 65534,
@@ -2300,14 +2302,16 @@
         "code": 770,
         "profileId": 259,
         "label": "MA-tempsensor",
-        "name": "MA-tempsensor"
+        "name": "MA-tempsensor",
+        "deviceTypeOrder": 0
       },
       "deviceTypes": [
         {
           "code": 770,
           "profileId": 259,
           "label": "MA-tempsensor",
-          "name": "MA-tempsensor"
+          "name": "MA-tempsensor",
+          "deviceTypeOrder": 0
         }
       ],
       "deviceVersions": [
@@ -2664,7 +2668,7 @@
               "storageOption": "RAM",
               "singleton": 0,
               "bounded": 0,
-              "defaultValue": "",
+              "defaultValue": "0x8000",
               "reportable": 1,
               "minInterval": 1,
               "maxInterval": 65534,
@@ -2680,7 +2684,7 @@
               "storageOption": "RAM",
               "singleton": 0,
               "bounded": 0,
-              "defaultValue": "0x8000",
+              "defaultValue": "-4000",
               "reportable": 1,
               "minInterval": 1,
               "maxInterval": 65534,
@@ -2696,7 +2700,7 @@
               "storageOption": "RAM",
               "singleton": 0,
               "bounded": 0,
-              "defaultValue": "0x8000",
+              "defaultValue": "8500",
               "reportable": 1,
               "minInterval": 1,
               "maxInterval": 65534,
@@ -2809,14 +2813,16 @@
         "code": 775,
         "profileId": 259,
         "label": "MA-humiditysensor",
-        "name": "MA-humiditysensor"
+        "name": "MA-humiditysensor",
+        "deviceTypeOrder": 0
       },
       "deviceTypes": [
         {
           "code": 775,
           "profileId": 259,
           "label": "MA-humiditysensor",
-          "name": "MA-humiditysensor"
+          "name": "MA-humiditysensor",
+          "deviceTypeOrder": 0
         }
       ],
       "deviceVersions": [
@@ -3173,7 +3179,7 @@
               "storageOption": "RAM",
               "singleton": 0,
               "bounded": 0,
-              "defaultValue": "0",
+              "defaultValue": "0xFFFF",
               "reportable": 1,
               "minInterval": 1,
               "maxInterval": 65534,
@@ -3318,14 +3324,16 @@
         "code": 262,
         "profileId": 259,
         "label": "MA-lightsensor",
-        "name": "MA-lightsensor"
+        "name": "MA-lightsensor",
+        "deviceTypeOrder": 0
       },
       "deviceTypes": [
         {
           "code": 262,
           "profileId": 259,
           "label": "MA-lightsensor",
-          "name": "MA-lightsensor"
+          "name": "MA-lightsensor",
+          "deviceTypeOrder": 0
         }
       ],
       "deviceVersions": [
@@ -3682,7 +3690,7 @@
               "storageOption": "RAM",
               "singleton": 0,
               "bounded": 0,
-              "defaultValue": "0",
+              "defaultValue": "0xFFFF",
               "reportable": 1,
               "minInterval": 1,
               "maxInterval": 65534,
@@ -3836,7 +3844,7 @@
       "profileId": 259,
       "endpointId": 1,
       "networkId": 0,
-      "parentEndpointIdentifier": null
+      "parentEndpointIdentifier": 0
     },
     {
       "endpointTypeName": "Anonymous Endpoint Type",
@@ -3844,7 +3852,7 @@
       "profileId": 259,
       "endpointId": 2,
       "networkId": 0,
-      "parentEndpointIdentifier": null
+      "parentEndpointIdentifier": 0
     },
     {
       "endpointTypeName": "Anonymous Endpoint Type",
@@ -3852,7 +3860,7 @@
       "profileId": 259,
       "endpointId": 3,
       "networkId": 0,
-      "parentEndpointIdentifier": null
+      "parentEndpointIdentifier": 0
     }
   ]
 }
